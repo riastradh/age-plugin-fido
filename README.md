@@ -15,22 +15,22 @@ Generate an identity:
 
 ```none
    $ ./age-plugin-fido
-   age1fido1ggt3ny6u8juu3hdz4cgmpczpq4zwwd6xz7u6q83wv7m2duessq8q4kuadx
-   AGE-PLUGIN-FIDO-1GGT3NY6U8JUU3HDZ4CGMPCZPQ4ZWWD6XZ7U6Q83WV7M2DUESSQ8QYQ8VCQ
+   age1fido1ptmsauuez42g3kampn99ge45q75lewlzhjghp2tl053l2tcmtyass9fk46
+   AGE-PLUGIN-FIDO-1PTMSAUUEZ42G3KAMPN99GE45Q75LEWLZHJGHP2TL053L2TCMTYASPNJ8QU
 ```
 
 Encapsulate a key:
 
 ```none
    $ ./age-plugin-fido --age-plugin=recipient-v1
->  -> add-recipient age1fido1ggt3ny6u8juu3hdz4cgmpczpq4zwwd6xz7u6q83wv7m2duessq8q4kuadx
+>  -> add-recipient age1fido1ptmsauuez42g3kampn99ge45q75lewlzhjghp2tl053l2tcmtyass9fk46
 >  -> wrap-file-key
 >  4bgH0XAZjfFoWzu9kPEc1X3LLDtrJhqsVzKbrdpfFtw=
 >  -> done
 # tap u2f device
-<  -> recipient-stanza 0 fido age1fido1ggt3ny6u8juu3hdz4cgmpczpq4zwwd6xz7u6q83wv7m2duessq8q4kuadx 9CJdH4iysYo25AWhepxI0m3LhuXtU11OVG1hqK8Xk9QedEM0fAW9KTdMUMp6ZA8tE2Ttq6HIjAq5VwoISKf3tg==
-<  owECAyYgAX0ktDwa01pTwL6jGJxQhMMjNW5AMB6D4kOr6XxqT5wGr4ojuazJARtN
-<  uerlt7Zen8yjg503VQHxuo9/lYAFbS4=
+<  -> recipient-stanza 0 fido MHqLmj4GmOeIjEmMPMSUzeF+197VQ5X6LbhlPqt5R3U= TomzroEmf35W7pvNEgRoKy0fv6vet3l/GaVf1JbgPbkmLftgpsTY/mcR/HhC8wPY8Xy6vDQRxnTrLxB1rW3MqA==
+<  owECAyYgAdzQudNiVIRxcIEebBHnT8o9zF3+QXQSoAq1D8aDNQTK6u7Rrr328o2h
+<  7uu7JirQK/YSlQiPwgXTDsVTZPlv21c=
 <  -> done
 ```
 
@@ -38,12 +38,12 @@ Decapsulate the key:
 
 ```none
    $ ./age-plugin-fido --age-plugin=identity-v1
->  -> add-identity AGE-PLUGIN-FIDO-1GGT3NY6U8JUU3HDZ4CGMPCZPQ4ZWWD6XZ7U6Q83WV7M2DUESSQ8QYQ8VCQ
->  -> recipient-stanza 0 fido age1fido1ggt3ny6u8juu3hdz4cgmpczpq4zwwd6xz7u6q83wv7m2duessq8q4kuadx 9CJdH4iysYo25AWhepxI0m3LhuXtU11OVG1hqK8Xk9QedEM0fAW9KTdMUMp6ZA8tE2Ttq6HIjAq5VwoISKf3tg==
->  owECAyYgAX0ktDwa01pTwL6jGJxQhMMjNW5AMB6D4kOr6XxqT5wGr4ojuazJARtN
->  uerlt7Zen8yjg503VQHxuo9/lYAFbS4=
+>  -> add-identity AGE-PLUGIN-FIDO-1PTMSAUUEZ42G3KAMPN99GE45Q75LEWLZHJGHP2TL053L2TCMTYASPNJ8QU
+>  -> recipient-stanza 0 fido MHqLmj4GmOeIjEmMPMSUzeF+197VQ5X6LbhlPqt5R3U= TomzroEmf35W7pvNEgRoKy0fv6vet3l/GaVf1JbgPbkmLftgpsTY/mcR/HhC8wPY8Xy6vDQRxnTrLxB1rW3MqA==
+>  owECAyYgAdzQudNiVIRxcIEebBHnT8o9zF3+QXQSoAq1D8aDNQTK6u7Rrr328o2h
+>  7uu7JirQK/YSlQiPwgXTDsVTZPlv21c=
 >  -> done
-# tap key
+# tap u2f device
 <  -> file-key 0
 <  4bgH0XAZjfFoWzu9kPEc1X3LLDtrJhqsVzKbrdpfFtw=
 <  -> done

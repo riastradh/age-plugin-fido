@@ -27,20 +27,6 @@
 /*
  * XXX TODO:
  *
- * - Decide what `identity' vs `recipient' is (currently: a random
- *   bech32 cookie that serves as the rpid; this is safe as long as
- *   nobody else on the planet uses rpids starting with `age1fido').
- *
- *   Maybe they should be the same, and the recipient stanza should
- *   have a hash of the recipient=identity rather than the recipient
- *   verbatim.
- *
- *   That way, the authority is symmetric as expected, and we can
- *   easily match up identities with recipient stanzas, but the age
- *   ciphertext file doesn't have the secret identity/recipient, so you
- *   need to store a secret recipient/identity key separately as a kind
- *   of weak `2FA'.
- *
  * - Report errors according to protocol, not with errx(1, "...").
  *
  * - Figure out how identities and recipient stanzas are supposed to
@@ -52,6 +38,8 @@
  * - Consider supporting PINs for FIDO2 devices.
  *
  * - Read from all devices on system in parallel.
+ *
+ * - Handle uppercase bech32 properly.
  */
 
 #define	_POSIX_C_SOURCE	200809L
@@ -71,6 +59,7 @@
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
+#include <openssl/sha.h>
 
 #include "b64dec.h"
 #include "b64write.h"
@@ -418,7 +407,6 @@ do_recipient(void)
 	struct {
 		char *bech32;
 		unsigned char *buf;
-		unsigned len;
 	} recips[32];
 	unsigned nrecips = 0;
 	struct {
@@ -515,21 +503,17 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		}
 	}
 
-	/* Verify that all the recipients are valid.  */
+	/* Verify that all the recipients are valid and decode.  */
 	for (i = 0; i < nrecips; i++) {
-		int n = bech32dec_size(strlen(AGEFIDO_HRP),
-		    strlen(recips[i].bech32));
-
-		/* XXX print, not err */
-		if (n == -1)
-			errx(1, "recipient too long");
-		if ((recips[i].buf = malloc(n)) == NULL)
+		if (bech32dec_size(strlen(AGEFIDO_HRP),
+			strlen(recips[i].bech32)) != 32)
+			errx(1, "invalid recipient");
+		if ((recips[i].buf = malloc(32)) == NULL)
 			err(1, "malloc");
-		if (bech32dec(recips[i].buf, n,
+		if (bech32dec(recips[i].buf, 32,
 			AGEFIDO_HRP, strlen(AGEFIDO_HRP),
 			recips[i].bech32, strlen(recips[i].bech32)) == -1)
 			errx(1, "invalid recipient");
-		recips[i].len = n;
 	}
 
 	CTASSERT(arraycount(recips) <= SIZE_MAX/arraycount(keys));
@@ -537,8 +521,7 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		err(1, "calloc");
 	for (i = 0; i < nrecips; i++) {
 		for (j = 0; j < nkeys; j++) {
-			encap(&keywraps[nrecips*i + j],
-			    recips[i].buf, recips[i].len,
+			encap(&keywraps[nrecips*i + j], recips[i].buf, 32,
 			    keys[j].buf, keys[j].len);
 		}
 	}
@@ -547,11 +530,22 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 	 * Phase 2 [plugin, uni-directional]
 	 */
 	for (i = 0; i < nrecips; i++) {
+		SHA256_CTX ctx;
+		unsigned char hash[32];
+
+		/* Compute the recipient hash.  */
+		SHA256_Init(&ctx);
+		SHA256_Update(&ctx, "AGEFIDO1", 8);
+		SHA256_Update(&ctx, recips[i].buf, 32);
+		SHA256_Final(hash, &ctx);
+
+		/* Print all the keys wrapped for this recipient.  */
 		for (j = 0; j < nkeys; j++) {
 			struct keywrap *K = &keywraps[nrecips*i + j];
 
-			printf("-> recipient-stanza %d fido %s ", j,
-			    recips[i].bech32);
+			printf("-> recipient-stanza %d fido ", j);
+			b64write(hash, 32, stdout, BIO_FLAGS_BASE64_NO_NL);
+			printf(" ");
 			b64write(K->credential_id, K->ncredential_id, stdout,
 			    BIO_FLAGS_BASE64_NO_NL);
 			printf("\n");
@@ -567,12 +561,12 @@ do_identity(void)
 	struct {
 		char *bech32;
 		unsigned char *buf;
-		unsigned len;
+		unsigned char *hash;
 	} ids[32];
 	unsigned nids = 0;
 	struct {
 		int file_index;
-		char *bech32;
+		char *hash_b64;
 		char *credid_b64;
 		unsigned char *buf;
 		unsigned len;
@@ -580,7 +574,7 @@ do_identity(void)
 	size_t nstanzas = 0;
 	char *p, *q;
 	int file_index;
-	size_t i, n;
+	size_t i, j, n;
 
 	/*
 	 * Phase 1 [client, uni-directional]
@@ -644,7 +638,7 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 				/* XXX print, not err */
 				errx(1, "invalid recipient");
 			*q++ = '\0';
-			if ((stanzas[nstanzas].bech32 = strdup(p)) == NULL)
+			if ((stanzas[nstanzas].hash_b64 = strdup(p)) == NULL)
 				err(1, "strdup");
 			if ((stanzas[nstanzas].credid_b64 = strdup(q)) == NULL)
 				err(1, "strdup");
@@ -701,17 +695,38 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		}
 	}
 
-	/*
-	 * XXX We don't actually do anything with the identities.
-	 */
+	/* Verify that all the identities are valid, decode, and hash.  */
+	for (i = 0; i < nids; i++) {
+		SHA256_CTX ctx;
+
+		if (bech32dec_size(strlen(AGEFIDO_ID_HRP),
+			strlen(ids[i].bech32)) != 32)
+			errx(1, "invalid identity 1 len=%d",
+			    bech32dec_size(strlen(AGEFIDO_ID_HRP),
+				strlen(ids[i].bech32)));
+		if ((ids[i].buf = malloc(32)) == NULL ||
+		    (ids[i].hash = malloc(32)) == NULL)
+			err(1, "malloc");
+		for (j = 0; j < strlen(ids[i].bech32); j++) /* XXX */
+			ids[i].bech32[j] = tolower(ids[i].bech32[j]);
+		if (bech32dec(ids[i].buf, 32,
+			AGEFIDO_ID_HRP, strlen(AGEFIDO_ID_HRP),
+			ids[i].bech32, strlen(ids[i].bech32)) == -1)
+			errx(1, "invalid identity 2");
+
+		SHA256_Init(&ctx);
+		SHA256_Update(&ctx, "AGEFIDO1", 8);
+		SHA256_Update(&ctx, ids[i].buf, 32);
+		SHA256_Final(ids[i].hash, &ctx);
+	}
 
 	/*
 	 * Phase 2 [plugin, bi-directional]
 	 */
 	for (file_index = -1, i = 0; i < nstanzas; i++) {
 		struct keywrap keywrap, *K = &keywrap;
-		unsigned char cookie[BECH32_PAYLOAD_MAX];
-		int ncookie;
+		void *hash;
+		size_t hashlen;
 		void *key;
 		size_t nkey;
 
@@ -719,12 +734,19 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		if (stanzas[i].file_index == file_index)
 			continue;
 
-		/* Verify and decode the bech32 cookie.  */
-		if ((ncookie = bech32dec(cookie, sizeof(cookie),
-			    AGEFIDO_HRP, strlen(AGEFIDO_HRP),
-			    stanzas[i].bech32, strlen(stanzas[i].bech32)))
-		    == -1)
-			errx(1, "invalid bech32 recipient");
+		/* Decode the recipient hash.  */
+		if (b64dec(stanzas[i].hash_b64, strlen(stanzas[i].hash_b64),
+			&hash, &hashlen) == -1 ||
+		    hashlen != 32)
+			errx(1, "invalid recipient stanza");
+
+		/* Find the matching identity.  */
+		for (j = 0; j < nids; j++) {
+			if (CRYPTO_memcmp(hash, ids[i].hash, 32) == 0)
+				break;
+		}
+		if (j == nids)
+			errx(1, "missing identity");
 
 		/* Decode the base64 credential id.  */
 		if (b64dec(stanzas[i].credid_b64,
@@ -732,10 +754,12 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 			&K->credential_id, &K->ncredential_id) == -1)
 			errx(1, "invalid base64 123: %s",
 			    stanzas[i].credid_b64);
+
+		/* Decapsulate the key.  */
 		K->ciphertext = stanzas[i].buf;
 		K->nciphertext = stanzas[i].len;
+		decap(K, ids[i].buf, 32, &key, &nkey);
 
-		decap(K, cookie, (size_t)ncookie, &key, &nkey);
 		printf("-> file-key %d\n", stanzas[i].file_index);
 		b64write(key, nkey, stdout, 0);
 	}
