@@ -11,6 +11,10 @@ age-plugin-fido -- draft fido plugin for age(1)
 
 Plugin specification: https://hackmd.io/@str4d/age-plugin-spec
 
+
+Example
+---
+
 Generate an identity:
 
 ```none
@@ -48,3 +52,36 @@ Decapsulate the key:
 <  4bgH0XAZjfFoWzu9kPEc1X3LLDtrJhqsVzKbrdpfFtw=
 <  -> done
 ```
+
+
+Format
+---
+
+Identity and recipient share the same payload, a 32-byte cookie chosen
+uniformly at random.  Identity is encoded with bech32 human-readable
+part `AGE-PLUGIN-FIDO-`, and recipient is encoded with `age1fido`.
+
+Recipient stanza has form:
+
+```none
+-> recipient-stanza <n> fido <base64-cookiehash> <base64-credentialid>
+<base64-ciphertext>
+```
+
+- `<n>` is the file number
+
+- `<base64-cookiehash>` is the whitespace-free base64 encoding of the
+  SHA-256 hash of `AGEFIDO1` followed by the 32-byte recipient/identity
+  cookie
+
+- `<base64-credentialid>` is the whitespace-free base64 encoding of a
+  FIDO credential id
+
+- `<base64-ciphertext>` is the line-folded base64 encoding of the
+  [fidocrypt](https://github.com/riastradh/fidocrypt) ciphertext
+  wrapping a key, using the recipient (which always starts with
+  `age1fido`) as the relying party id
+
+Note: The cookie appears in both the identity and the recipient, but
+not in the stanza.  So the identity and recipient are symmetric, and
+you need one of them -- in addition to the device -- to decrypt.
