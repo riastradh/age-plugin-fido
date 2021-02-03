@@ -1,0 +1,8 @@
+*.d
+*.o
+*.out
+*.tmp
+*~
+
+/age-plugin-fido
+/t_bech32
