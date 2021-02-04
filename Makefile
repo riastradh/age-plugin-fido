@@ -50,6 +50,7 @@ SRCS = \
 	b64dec.c \
 	b64write.c \
 	bech32.c \
+	dae.c \
 	freadline.c \
 	main.c \
 	progname.c \
@@ -61,7 +62,7 @@ DEPS = $(SRCS:.c=.o.d)
 
 age-plugin-fido: $(SRCS:.c=.o)
 	$(CC) -o $@ $(_CFLAGS) $(LDFLAGS) $(SRCS:.c=.o) \
-		-lfidocrypt -lfido2 -lcrypto
+		-lfido2 -lcrypto
 
 clean: clean-age-plugin-fido
 clean-age-plugin-fido: .PHONY
@@ -97,3 +98,30 @@ clean-bech32: .PHONY
 	-rm -f t_bech32
 	-rm -f t_bech32.out
 	-rm -f t_bech32.out.tmp
+
+
+check: check-dae
+check-dae: .PHONY
+check-dae: t_dae.exp t_dae.out
+	diff -u t_dae.exp t_dae.out
+
+t_dae.out: t_dae
+	./t_dae > $@.tmp && mv -f $@.tmp $@
+
+SRCS_t_dae = \
+	dae.c \
+	t_dae.c \
+	# end of SRCS_t_dae
+DEPS_t_dae = $(SRCS_t_dae:.c=.o.d)
+-include $(DEPS_t_dae)
+
+t_dae: $(SRCS_t_dae:.c=.o)
+	$(CC) -o $@ $(_CFLAGS) $(LDFLAGS) $(SRCS_t_dae:.c=.o) -lcrypto
+
+clean: clean-dae
+clean-dae: .PHONY
+	-rm -f $(SRCS_t_dae:.c=.o)
+	-rm -f $(SRCS_t_dae:.c=.o.d)
+	-rm -f t_dae
+	-rm -f t_dae.out
+	-rm -f t_dae.out.tmp

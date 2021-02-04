@@ -29,9 +29,6 @@
  *
  * - Report errors according to protocol, not with errx(1, "...").
  *
- * - Figure out how identities and recipient stanzas are supposed to
- *   match up in the key-unwrapping protocol.
- *
  * - Give feedback in the key-unwrapping protocol about when we need
  *   device interaction.
  *
@@ -54,7 +51,6 @@
 #include <string.h>
 
 #include <fido.h>
-#include <fidocrypt.h>
 
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
@@ -65,6 +61,7 @@
 #include "b64write.h"
 #include "bech32.h"
 #include "ctassert.h"
+#include "dae.h"
 #include "freadline.h"
 #include "progname.h"
 #include "reallocn.h"
@@ -72,6 +69,7 @@
 
 #define	arraycount(A)	(sizeof(A)/sizeof(*(A)))
 
+#define	AGEFIDO_RP_ID	"x-age://fido"
 #define	AGEFIDO_HRP	"age1fido"
 #define	AGEFIDO_ID_HRP	"age-plugin-fido-"
 
@@ -114,32 +112,16 @@ opendev(const char *devpath)
 	return dev;
 }
 
-struct keywrap {
-	void *credential_id;
-	size_t ncredential_id;
-	void *ciphertext;
-	size_t nciphertext;
-};
-
-static void
-encap(struct keywrap *K, const void *cookie, size_t ncookie,
-    const void *key, size_t nkey)
+static void *
+enroll(size_t *ncredential_idp)
 {
-	char rp_id[BECH32_MAX + 1];
 	uint8_t challenge[32];
 	fido_dev_t *dev = NULL;
 	fido_cred_t *cred = NULL;
 	const void *credential_id;
 	size_t ncredential_id;
-	unsigned char *ciphertext = NULL;
-	size_t nciphertext = 0;
-	int n, error;
-
-	/* Encode the relying party id.  */
-	if ((n = bech32enc(rp_id, sizeof(rp_id),
-		    AGEFIDO_HRP, strlen(AGEFIDO_HRP),
-		    cookie, ncookie)) == -1)
-		err(1, "bad cookie");
+	void *credidcopy = NULL;
+	int error;
 
 	/* Generate a challenge.  */
 	if (RAND_bytes(challenge, sizeof(challenge)) != 1)
@@ -150,7 +132,7 @@ encap(struct keywrap *K, const void *cookie, size_t ncookie,
 		errx(1, "fido_cred_new");
 	if ((error = fido_cred_set_type(cred, COSE_ES256)) != FIDO_OK)
 		errx(1, "fido_cred_set_type: %s", fido_strerr(error));
-	if ((error = fido_cred_set_rp(cred, "hello", NULL)) != FIDO_OK)
+	if ((error = fido_cred_set_rp(cred, AGEFIDO_RP_ID, NULL)) != FIDO_OK)
 		errx(1, "fido_cred_set_rp: %s", fido_strerr(error));
 	if ((error = fido_cred_set_user(cred,
 		    (const unsigned char *)"age", strlen("age"),
@@ -189,45 +171,43 @@ encap(struct keywrap *K, const void *cookie, size_t ncookie,
 			errx(1, "fido_cred_verify: %s", fido_strerr(error));
 	}
 
-	/* Encrypt the key.  */
-	if ((error = fido_cred_encrypt(cred, NULL, 0, key, nkey,
-		    &ciphertext, &nciphertext)) != FIDO_OK)
-		errx(1, "fido_cred_encrypt: %s", fido_strerr(error));
-
-	/* Copy the credential id.  */
-	if ((K->credential_id = malloc(ncredential_id)) == NULL)
-		errx(1, "malloc");
-	memcpy(K->credential_id, credential_id, ncredential_id);
-	K->ncredential_id = ncredential_id;
-
-	/* Return the ciphertext.  */
-	K->ciphertext = ciphertext;
-	K->nciphertext = nciphertext;
+	/*
+	 * Copy the credential id.  We don't care about anything else
+	 * like the public key.
+	 */
+	if ((credidcopy = malloc(ncredential_id)) == NULL)
+		err(1, "malloc");
+	memcpy(credidcopy, credential_id, ncredential_id);
 
 	/* Success!  */
 	fido_cred_free(&cred);
 	fido_dev_free(&dev);
 	OPENSSL_cleanse(challenge, sizeof(challenge));
-	OPENSSL_cleanse(rp_id, sizeof(rp_id));
+
+	*ncredential_idp = ncredential_id;
+	return credidcopy;
 }
 
-static void
-decap(const struct keywrap *K, const void *cookie, size_t ncookie,
-    void **keyp, size_t *nkeyp)
+static void *
+encap(const void *credential_id, size_t ncredential_id,
+    const void *salt, size_t nsalt,
+    const void *payload, size_t npayload,
+    size_t *lenp)
 {
-	char rp_id[BECH32_MAX + 1];
 	uint8_t challenge[32];
 	fido_dev_t *dev = NULL;
 	fido_assert_t *assertion = NULL;
-	unsigned char *key;
-	size_t nkey;
-	int n, error;
+	const unsigned char *hmacsecret;
+	size_t nhmacsecret;
+	unsigned char *ciphertext = NULL;
+	size_t nciphertext = 0;
+	int error;
 
-	/* Encode the relying party id.  */
-	if ((n = bech32enc(rp_id, sizeof(rp_id),
-		    AGEFIDO_HRP, strlen(AGEFIDO_HRP),
-		    cookie, ncookie)) == -1)
-		err(1, "bad cookie");
+	/* Sanity-check the salt and payload sizes.  */
+	if (nsalt != 32)
+		errx(1, "invalid salt size: %zu", nsalt);
+	if (npayload > SIZE_MAX - DAE_TAGBYTES)
+		errx(1, "payload too long");
 
 	/* Generate a challenge.  */
 	if (RAND_bytes(challenge, sizeof(challenge)) != 1)
@@ -236,15 +216,23 @@ decap(const struct keywrap *K, const void *cookie, size_t ncookie,
 	/* Create the assertion and set its parameters.  */
 	if ((assertion = fido_assert_new()) == NULL)
 		errx(1, "fido_assert_new");
-	if ((error = fido_assert_set_rp(assertion, "hello")) != FIDO_OK)
+	if ((error = fido_assert_set_rp(assertion, AGEFIDO_RP_ID)) != FIDO_OK)
 		errx(1, "fido_assert_set_rp: %s", fido_strerr(error));
 	if ((error = fido_assert_set_clientdata_hash(assertion,
 		    challenge, sizeof(challenge))) != FIDO_OK)
 		errx(1, "fido_assert_set_clientdata_hash: %s",
 		    fido_strerr(error));
-	if ((error = fido_assert_allow_cred(assertion, K->credential_id,
-		    K->ncredential_id)) != FIDO_OK)
+	if ((error = fido_assert_allow_cred(assertion, credential_id,
+		    ncredential_id)) != FIDO_OK)
 		errx(1, "fido_assert_allow_cred: %s", fido_strerr(error));
+	if ((error = fido_assert_set_extensions(assertion,
+		    FIDO_EXT_HMAC_SECRET))
+	    != FIDO_OK)
+		errx(1, "fido_assert_set_extensions(FIDO_EXT_HMAC_SECRET): %s",
+		    fido_strerr(error));
+	if ((error = fido_assert_set_hmac_salt(assertion, salt, nsalt))
+	    != FIDO_OK)
+		errx(1, "fido_assert_set_hmac_salt: %s", fido_strerr(error));
 
 	/* Open a device.  */
 	dev = opendev(NULL);
@@ -262,21 +250,114 @@ decap(const struct keywrap *K, const void *cookie, size_t ncookie,
 	if (fido_assert_count(assertion) != 1)
 		errx(1, "failed to get one assertion response");
 
-	/*
-	 * Verify and decrypt the ciphertext using the `key' derived
-	 * from the assertion.
-	 */
-	if ((error = fido_assert_decrypt(assertion, 0,
-		    K->ciphertext, K->nciphertext, &key, &nkey)) != FIDO_OK)
-		errx(1, "fido_assert_decrypt: %s", fido_strerr(error));
+	/* Get the HMAC secret.  It should be 32 bytes long.  */
+	hmacsecret = fido_assert_hmac_secret_ptr(assertion, 0);
+	nhmacsecret = fido_assert_hmac_secret_len(assertion, 0);
+	if (nhmacsecret != 32)
+		errx(1, "invalid hmac secret length: %zu", nhmacsecret);
+
+	/* Allocate ciphertext.  */
+	nciphertext = npayload + DAE_TAGBYTES;
+	if ((ciphertext = malloc(nciphertext)) == NULL)
+		err(1, "malloc");
+	CTASSERT(DAE_KEYBYTES == 32);
+	if (!dae_encrypt(ciphertext, credential_id, ncredential_id,
+		payload, npayload, hmacsecret))
+		errx(1, "encrypt failed");
 
 	/* Success!  */
-	*keyp = key;
-	*nkeyp = nkey;
 	fido_assert_free(&assertion);
 	fido_dev_free(&dev);
 	OPENSSL_cleanse(challenge, sizeof(challenge));
-	OPENSSL_cleanse(rp_id, sizeof(rp_id));
+
+	*lenp = nciphertext;
+	return ciphertext;
+}
+
+static void *
+decap(const void *credential_id, size_t ncredential_id,
+    const void *salt, size_t nsalt,
+    const void *ciphertext, size_t nciphertext,
+    size_t *lenp)
+{
+	uint8_t challenge[32];
+	fido_dev_t *dev = NULL;
+	fido_assert_t *assertion = NULL;
+	const unsigned char *hmacsecret;
+	size_t nhmacsecret;
+	unsigned char *payload = NULL;
+	size_t npayload = 0;
+	int error;
+
+	/* Sanity-check the salt and ciphertext sizes.  */
+	if (nsalt != 32)
+		errx(1, "invalid salt size: %zu", nsalt);
+	if (nciphertext < DAE_TAGBYTES)
+		errx(1, "ciphertext too short");
+
+	/* Generate a challenge.  */
+	if (RAND_bytes(challenge, sizeof(challenge)) != 1)
+		errx(1, "RAND_bytes");
+
+	/* Create the assertion and set its parameters.  */
+	if ((assertion = fido_assert_new()) == NULL)
+		errx(1, "fido_assert_new");
+	if ((error = fido_assert_set_rp(assertion, AGEFIDO_RP_ID)) != FIDO_OK)
+		errx(1, "fido_assert_set_rp: %s", fido_strerr(error));
+	if ((error = fido_assert_set_clientdata_hash(assertion,
+		    challenge, sizeof(challenge))) != FIDO_OK)
+		errx(1, "fido_assert_set_clientdata_hash: %s",
+		    fido_strerr(error));
+	if ((error = fido_assert_allow_cred(assertion, credential_id,
+		    ncredential_id)) != FIDO_OK)
+		errx(1, "fido_assert_allow_cred: %s", fido_strerr(error));
+	if ((error = fido_assert_set_extensions(assertion,
+		    FIDO_EXT_HMAC_SECRET))
+	    != FIDO_OK)
+		errx(1, "fido_assert_set_extensions(FIDO_EXT_HMAC_SECRET): %s",
+		    fido_strerr(error));
+	if ((error = fido_assert_set_hmac_salt(assertion, salt, nsalt))
+	    != FIDO_OK)
+		errx(1, "fido_assert_set_hmac_salt: %s", fido_strerr(error));
+
+	/* Open a device.  */
+	dev = opendev(NULL);
+
+	/* Get an assertion response.  */
+	if ((error = fido_dev_get_assert(dev, assertion, NULL)) != FIDO_OK) {
+		(void)fido_dev_cancel(dev);
+		errx(1, "fido_dev_get_assert: %s", fido_strerr(error));
+	}
+
+	/* Close the device -- we're done with it now.  */
+	fido_dev_close(dev);
+
+	/* Verify we got an assertion response.  */
+	if (fido_assert_count(assertion) != 1)
+		errx(1, "failed to get one assertion response");
+
+	/* Get the HMAC secret.  It should be 32 bytes long.  */
+	hmacsecret = fido_assert_hmac_secret_ptr(assertion, 0);
+	nhmacsecret = fido_assert_hmac_secret_len(assertion, 0);
+	if (nhmacsecret != 32)
+		errx(1, "invalid hmac secret length: %zu", nhmacsecret);
+
+	/* Allocate payload.  */
+	npayload = nciphertext - DAE_TAGBYTES;
+	if ((payload = malloc(npayload)) == NULL)
+		err(1, "malloc");
+	CTASSERT(DAE_KEYBYTES == 32);
+	if (!dae_decrypt(payload, credential_id, ncredential_id,
+		ciphertext, nciphertext, hmacsecret))
+		errx(1, "decrypt failed"); /* XXX return gracefully */
+
+	/* Success!  */
+	fido_assert_free(&assertion);
+	fido_dev_free(&dev);
+	OPENSSL_cleanse(challenge, sizeof(challenge));
+
+	*lenp = npayload;
+	return payload;
 }
 
 static bool
@@ -374,31 +455,34 @@ read_b64_until_cmd(unsigned char **bufp, size_t *lenp, size_t *cmdlenp)
 static void
 do_keygen(void)
 {
-	uint8_t buf[32];
+	void *credential_id = NULL;
+	size_t ncredential_id = 0;
 	char bech32[BECH32_MAX + 1];
 	int n;
 
-	if (RAND_bytes(buf, sizeof(buf)) != 1)
-		errx(1, "RAND_bytes");
+	credential_id = enroll(&ncredential_id);
+	if (ncredential_id > BECH32_PAYLOAD_MAX)
+		errx(1, "overlong credential id: %zu bytes", ncredential_id);
 
 	/* Print the recipient.  */
 	if (bech32enc(bech32, sizeof(bech32),
 		AGEFIDO_HRP, strlen(AGEFIDO_HRP),
-		buf, sizeof(buf)) == -1)
+		credential_id, ncredential_id) == -1)
 		errx(1, "bech32enc");
 	printf("%s\n", bech32);
 
 	/* Print the identity.  */
 	if ((n = bech32enc(bech32, sizeof(bech32),
 		    AGEFIDO_ID_HRP, strlen(AGEFIDO_ID_HRP),
-		    buf, sizeof(buf))) == -1)
+		    credential_id, ncredential_id)) == -1)
 		errx(1, "bech32enc");
 	while (n --> 0)
 		bech32[n] = toupper(bech32[n]);	/* XXX variable-time */
 	printf("%s\n", bech32);
 
 	OPENSSL_cleanse(bech32, sizeof(bech32));
-	OPENSSL_cleanse(buf, sizeof(buf));
+	OPENSSL_cleanse(credential_id, ncredential_id);
+	free(credential_id);
 }
 
 static void
@@ -406,15 +490,20 @@ do_recipient(void)
 {
 	struct {
 		char *bech32;
-		unsigned char *buf;
-	} recips[32];
+		unsigned char *credential_id;
+		size_t ncredential_id;
+	} recips[32], *R;
 	unsigned nrecips = 0;
 	struct {
 		unsigned char *buf;
 		unsigned len;
-	} keys[32];
+	} keys[32], *K;
 	unsigned nkeys = 0;
-	struct keywrap *keywraps;
+	struct {
+		unsigned char salt[32];
+		unsigned char *ciphertext;
+		size_t nciphertext;
+	} *keywraps, *KW;
 	char *p;
 	size_t n;
 	unsigned i, j;
@@ -505,24 +594,38 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 
 	/* Verify that all the recipients are valid and decode.  */
 	for (i = 0; i < nrecips; i++) {
-		if (bech32dec_size(strlen(AGEFIDO_HRP),
-			strlen(recips[i].bech32)) != 32)
+		int n;
+
+		if ((n = bech32dec_size(strlen(AGEFIDO_HRP),
+			strlen(recips[i].bech32))) == -1)
 			errx(1, "invalid recipient");
-		if ((recips[i].buf = malloc(32)) == NULL)
+		assert(n >= 0);
+		if ((recips[i].credential_id = malloc(n ? n : 1)) == NULL)
 			err(1, "malloc");
-		if (bech32dec(recips[i].buf, 32,
+		if (bech32dec(recips[i].credential_id, (size_t)n,
 			AGEFIDO_HRP, strlen(AGEFIDO_HRP),
-			recips[i].bech32, strlen(recips[i].bech32)) == -1)
+			recips[i].bech32, strlen(recips[i].bech32)) != n)
 			errx(1, "invalid recipient");
+		recips[i].ncredential_id = (size_t)n;
 	}
 
+	/* Encapsulate all the keys.  */
 	CTASSERT(arraycount(recips) <= SIZE_MAX/arraycount(keys));
 	if ((keywraps = calloc(nrecips*nkeys, sizeof(keywraps[0]))) == NULL)
 		err(1, "calloc");
 	for (i = 0; i < nrecips; i++) {
+		R = &recips[i];
 		for (j = 0; j < nkeys; j++) {
-			encap(&keywraps[nrecips*i + j], recips[i].buf, 32,
-			    keys[j].buf, keys[j].len);
+			K = &keys[j];
+			KW = &keywraps[nrecips*i + j];
+
+			if (RAND_bytes(KW->salt, sizeof(KW->salt)) != 1)
+				errx(1, "RAND_bytes");
+			KW->ciphertext =
+			    encap(R->credential_id, R->ncredential_id,
+				KW->salt, sizeof(KW->salt),
+				K->buf, K->len,
+				&KW->nciphertext);
 		}
 	}
 
@@ -530,26 +633,20 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 	 * Phase 2 [plugin, uni-directional]
 	 */
 	for (i = 0; i < nrecips; i++) {
-		SHA256_CTX ctx;
-		unsigned char hash[32];
-
-		/* Compute the recipient hash.  */
-		SHA256_Init(&ctx);
-		SHA256_Update(&ctx, "AGEFIDO1", 8);
-		SHA256_Update(&ctx, recips[i].buf, 32);
-		SHA256_Final(hash, &ctx);
+		R = &recips[i];
 
 		/* Print all the keys wrapped for this recipient.  */
 		for (j = 0; j < nkeys; j++) {
-			struct keywrap *K = &keywraps[nrecips*i + j];
+			KW = &keywraps[nrecips*i + j];
 
 			printf("-> recipient-stanza %d fido ", j);
-			b64write(hash, 32, stdout, BIO_FLAGS_BASE64_NO_NL);
+			b64write(R->credential_id, R->ncredential_id, stdout,
+			    BIO_FLAGS_BASE64_NO_NL);
 			printf(" ");
-			b64write(K->credential_id, K->ncredential_id, stdout,
+			b64write(KW->salt, sizeof(KW->salt), stdout,
 			    BIO_FLAGS_BASE64_NO_NL);
 			printf("\n");
-			b64write(K->ciphertext, K->nciphertext, stdout, 0);
+			b64write(KW->ciphertext, KW->nciphertext, stdout, 0);
 		}
 	}
 	printf("-> done\n");
@@ -560,17 +657,17 @@ do_identity(void)
 {
 	struct {
 		char *bech32;
-		unsigned char *buf;
-		unsigned char *hash;
-	} ids[32];
+		unsigned char *credential_id;
+		size_t ncredential_id;
+	} ids[32], *I;
 	unsigned nids = 0;
 	struct {
 		int file_index;
-		char *hash_b64;
 		char *credid_b64;
+		char *salt_b64;
 		unsigned char *buf;
 		unsigned len;
-	} *stanzas = NULL;
+	} *stanzas = NULL, *S;
 	size_t nstanzas = 0;
 	char *p, *q;
 	int file_index;
@@ -621,13 +718,14 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 				sizeof(stanzas[0])) == -1)
 				err(1, "realloc");
 
+			S = &stanzas[nstanzas++];
+
 			/* Parse stanza number and verify type.  */
-			sscanf(p, " %d fido %n", &stanzas[nstanzas].file_index,
-			    &m);
+			sscanf(p, " %d fido %n", &S->file_index, &m);
 			if (m == -1)
 				/* XXX print, not err */
 				errx(1, "invalid recipient");
-			if (stanzas[nstanzas].file_index < 0)
+			if (S->file_index < 0)
 				errx(1, "invalid file index");
 			assert(m > 0);
 			assert((size_t)m <= n);
@@ -638,9 +736,8 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 				/* XXX print, not err */
 				errx(1, "invalid recipient");
 			*q++ = '\0';
-			if ((stanzas[nstanzas].hash_b64 = strdup(p)) == NULL)
-				err(1, "strdup");
-			if ((stanzas[nstanzas].credid_b64 = strdup(q)) == NULL)
+			if ((S->credid_b64 = strdup(p)) == NULL ||
+			    (S->salt_b64 = strdup(q)) == NULL)
 				err(1, "strdup");
 
 			/*
@@ -656,8 +753,8 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 				errx(1, "empty ciphertext");
 
 			/* Put the key at the end of the list.  */
-			stanzas[nstanzas].buf = ciphertext;
-			stanzas[nstanzas].len = clen;
+			S->buf = ciphertext;
+			S->len = clen;
 			nstanzas++;
 
 			/*
@@ -695,73 +792,85 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		}
 	}
 
-	/* Verify that all the identities are valid, decode, and hash.  */
+	/* Verify that all the identities are valid and decode them.  */
 	for (i = 0; i < nids; i++) {
-		SHA256_CTX ctx;
+		int n;
 
-		if (bech32dec_size(strlen(AGEFIDO_ID_HRP),
-			strlen(ids[i].bech32)) != 32)
-			errx(1, "invalid identity 1 len=%d",
-			    bech32dec_size(strlen(AGEFIDO_ID_HRP),
-				strlen(ids[i].bech32)));
-		if ((ids[i].buf = malloc(32)) == NULL ||
-		    (ids[i].hash = malloc(32)) == NULL)
+		I = &ids[i];
+
+		/*
+		  Find the length of the credential id and allocate a
+		  buffer for it.
+		*/
+		if ((n = bech32dec_size(strlen(AGEFIDO_ID_HRP),
+			    strlen(I->bech32))) == -1)
+			errx(1, "invalid identity length");
+		assert(n >= 0);
+		if ((I->credential_id = malloc(n ? n : 1)) == NULL)
 			err(1, "malloc");
-		for (j = 0; j < strlen(ids[i].bech32); j++) /* XXX */
-			ids[i].bech32[j] = tolower(ids[i].bech32[j]);
-		if (bech32dec(ids[i].buf, 32,
-			AGEFIDO_ID_HRP, strlen(AGEFIDO_ID_HRP),
-			ids[i].bech32, strlen(ids[i].bech32)) == -1)
-			errx(1, "invalid identity 2");
+		I->ncredential_id = (size_t)n;
 
-		SHA256_Init(&ctx);
-		SHA256_Update(&ctx, "AGEFIDO1", 8);
-		SHA256_Update(&ctx, ids[i].buf, 32);
-		SHA256_Final(ids[i].hash, &ctx);
+		/* Convert the credential id to lowercase.  */
+		/* XXX variable-time and doesn't validate */
+		for (j = 0; j < strlen(I->bech32); j++) /* XXX */
+			I->bech32[j] = tolower(I->bech32[j]);
+
+		/* Decode the credential id.  */
+		if (bech32dec(I->credential_id, I->ncredential_id,
+			AGEFIDO_ID_HRP, strlen(AGEFIDO_ID_HRP),
+			I->bech32, strlen(I->bech32)) == -1)
+			errx(1, "invalid identity");
 	}
 
 	/*
 	 * Phase 2 [plugin, bi-directional]
 	 */
 	for (file_index = -1, i = 0; i < nstanzas; i++) {
-		struct keywrap keywrap, *K = &keywrap;
-		void *hash;
-		size_t hashlen;
-		void *key;
-		size_t nkey;
+		void *credential_id = NULL;
+		size_t ncredential_id = 0;
+		void *salt = NULL;
+		size_t nsalt = 0;
+		void *key = NULL;
+		size_t nkey = 0;
+
+		S = &stanzas[i];
 
 		/* Skip files we've already decapsulated.  */
-		if (stanzas[i].file_index == file_index)
+		if (S->file_index == file_index)
 			continue;
 
-		/* Decode the recipient hash.  */
-		if (b64dec(stanzas[i].hash_b64, strlen(stanzas[i].hash_b64),
-			&hash, &hashlen) == -1 ||
-		    hashlen != 32)
+		/* Decode the base64 recipient credential id.  */
+		if (b64dec(S->credid_b64, strlen(S->credid_b64),
+			&credential_id, &ncredential_id) == -1)
 			errx(1, "invalid recipient stanza");
 
 		/* Find the matching identity.  */
 		for (j = 0; j < nids; j++) {
-			if (CRYPTO_memcmp(hash, ids[i].hash, 32) == 0)
+			I = &ids[j];
+			if (ncredential_id == I->ncredential_id &&
+			    CRYPTO_memcmp(credential_id, I->credential_id,
+				ncredential_id) == 0)
 				break;
 		}
 		if (j == nids)
 			errx(1, "missing identity");
 
-		/* Decode the base64 credential id.  */
-		if (b64dec(stanzas[i].credid_b64,
-			strlen(stanzas[i].credid_b64),
-			&K->credential_id, &K->ncredential_id) == -1)
-			errx(1, "invalid base64 123: %s",
-			    stanzas[i].credid_b64);
+		/* Decode the base64 salt.  */
+		if (b64dec(S->salt_b64, strlen(S->salt_b64), &salt, &nsalt)
+		    == -1)
+			errx(1, "invalid salt");
 
 		/* Decapsulate the key.  */
-		K->ciphertext = stanzas[i].buf;
-		K->nciphertext = stanzas[i].len;
-		decap(K, ids[i].buf, 32, &key, &nkey);
+		key = decap(credential_id, ncredential_id, salt, nsalt,
+		    S->buf, S->len, &nkey);
 
-		printf("-> file-key %d\n", stanzas[i].file_index);
+		printf("-> file-key %d\n", S->file_index);
 		b64write(key, nkey, stdout, 0);
+		file_index = S->file_index;
+
+		free(key);
+		free(salt);
+		free(credential_id);
 	}
 	printf("-> done\n");
 }
