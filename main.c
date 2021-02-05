@@ -799,9 +799,9 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		I = &ids[i];
 
 		/*
-		  Find the length of the credential id and allocate a
-		  buffer for it.
-		*/
+		 * Find the length of the credential id and allocate a
+		 * buffer for it.
+		 */
 		if ((n = bech32dec_size(strlen(AGEFIDO_ID_HRP),
 			    strlen(I->bech32))) == -1)
 			errx(1, "invalid identity length");
