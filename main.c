@@ -531,7 +531,7 @@ do_recipient(void)
 	for (;;) {
 		/* Read a line into buf.  */
 		if (freadline(buf, sizeof buf, &n, stdin) == EOF)
-			err(1, "read command");
+			errx(1, "read command");
 
 parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		p = buf;
@@ -715,7 +715,7 @@ do_identity(void)
 	for (;;) {
 		/* Read a line into buf.  */
 		if (freadline(buf, sizeof buf, &n, stdin) == EOF)
-			err(1, "read command");
+			errx(1, "read command");
 
 parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		p = buf;
