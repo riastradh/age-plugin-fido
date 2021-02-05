@@ -42,7 +42,7 @@
 #define	_POSIX_C_SOURCE	200809L
 
 #include <assert.h>
-#include <ctype.h>		/* XXX variable-time toupper */
+#include <ctype.h>		/* XXX variable-time tolower, toupper */
 #include <err.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -476,8 +476,8 @@ do_keygen(void)
 		    AGEFIDO_ID_HRP, strlen(AGEFIDO_ID_HRP),
 		    credential_id, ncredential_id)) == -1)
 		errx(1, "bech32enc");
-	while (n --> 0)
-		bech32[n] = toupper(bech32[n]);	/* XXX variable-time */
+	while (n --> 0)		/* XXX variable-time */
+		bech32[n] = toupper((unsigned char)bech32[n]);
 	printf("%s\n", bech32);
 
 	OPENSSL_cleanse(bech32, sizeof(bech32));
@@ -813,7 +813,7 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		/* Convert the credential id to lowercase.  */
 		/* XXX variable-time and doesn't validate */
 		for (j = 0; j < strlen(I->bech32); j++) /* XXX */
-			I->bech32[j] = tolower(I->bech32[j]);
+			I->bech32[j] = tolower((unsigned char)I->bech32[j]);
 
 		/* Decode the credential id.  */
 		if (bech32dec(I->credential_id, I->ncredential_id,
