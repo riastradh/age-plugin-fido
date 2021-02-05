@@ -244,7 +244,7 @@ static uint8_t bech32tab[32] = {
  *	Caller is responsible for ensuring in[i] == in[i] & 0x1f.
  */
 static void
-bech32_b2c_8(char out[restrict static 8], const uint8_t in[static 8])
+bech32_b2c_8(char out[static 8], const uint8_t in[static 8])
 {
 	uint64_t out64 = 0;
 	uint64_t in64;
@@ -336,7 +336,7 @@ bech32_b2c(char *out, const uint8_t *in, size_t n)
  *	Returns 0 if the encoding is valid, -1 if invalid.
  */
 static int
-bech32_c2b_8(uint8_t out[restrict static 8], const char in[static 8])
+bech32_c2b_8(uint8_t out[static 8], const char in[static 8])
 {
 	uint64_t out64 = UINT64_C(0x8080808080808080); /* error indicators */
 	uint64_t in64;
