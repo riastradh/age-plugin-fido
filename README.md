@@ -66,12 +66,17 @@ with `age1fido`.
 Recipient stanza has form:
 
 ```none
-fido <base64-credid> <base64-salt>
+fido <base64-credhash> <base64-salt>
 <base64-ciphertext>
 ```
 
-- `<base64-credid>` is the whitespace-free base64 encoding of the
-  credential id
+- `<base64-credhash>` is the whitespace-free base64 encoding of the
+  SHA-256 hash of:
+
+  - `AGEFIDO1` (US-ASCII text)
+  - the 2-byte big-endian encoding of the number of bytes in the
+    credential id
+  - the credential id
 
 - `<base64-salt>` is the whitespace-free base64 encoding of a 32-byte
   salt chosen independently uniformly at random for each wrapped key
