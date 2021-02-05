@@ -53,6 +53,202 @@
 #define	arraycount(A)	(sizeof(A)/sizeof(*(A)))
 
 /*
+ * bech32_tolower_8(out, in)
+ *
+ *	Convert eight 7-bit US-ASCII code points in[0], in[1], ...,
+ *	in[7] to lowercase at out[0], out[1], ..., out[7] in constant
+ *	time.  Returns -1 on error if any in[i] has the eighth bit set,
+ *	or 0 on success.
+ */
+static int
+bech32_tolower_8(char out[static 8], const char in[static 8])
+{
+	uint64_t x, y, error, mask;
+
+	/*
+	 * Load input.  byte order doesn't matter as long as it matches
+	 * on input and output -- each byte is independent.
+	 */
+	memcpy(&x, in, 8);
+
+	/*
+	 * Input should be US-ASCII; take eighth bit as error
+	 * indicator, and then set it to borrow from while we work on
+	 * 7-bit units.
+	 */
+	error = x & UINT64_C(0x8080808080808080);
+	y = x;
+	x |= UINT64_C(0x8080808080808080);
+
+	/*
+	 * Borrow if less than `A' (0x41): clear eighth bit in each
+	 * unit less than `A'.
+	 */
+	CTASSERT('A' == 0x41);
+	mask = x - UINT64_C(0x4141414141414141);
+
+	/*
+	 * Borrow if not greater than `Z' (0x5a) and invert: clear
+	 * eighth bit in each unit greater than `Z'.
+	 */
+	CTASSERT('Z' == 0x5a);
+	mask &= ~(x - UINT64_C(0x5b5b5b5b5b5b5b5b));
+
+	/*
+	 * Clear all bits other than the borrow.  After this point, the
+	 * eighth bit of each 8-bit unit is set iff that unit lies in
+	 * US-ASCII A-Z.
+	 */
+	mask &= 0x8080808080808080;
+
+	/* Shift 0x80 to 0x20 to get the case-changing bit mask.  */
+	mask >>= 2;
+	assert(mask == (mask & 0x2020202020202020));
+
+	/* Change case.  */
+	y ^= mask;
+
+	/* Store output.  */
+	memcpy(out, &y, 8);
+
+	/*
+	 * Map zero to 0, nonzero to -1.  In this case, all the nonzero
+	 * bits will be at positions 7 mod 8, so shift them to 0 mod 8
+	 * and then combine them all at 0.
+	 */
+	error >>= 7;
+	error |= error >> 8;
+	error |= error >> 16;
+	error |= error >> 32;
+	return -(error & 1);
+}
+
+/*
+ * bech32_tolower(out, in, n)
+ *
+ *	Convert n 7-bit US-ASCII code points in[0], in[1], ..., in[n-1]
+ *	to lowercase at out[0], out[1], ..., out[n-1] in constant time.
+ *	Returns -1 on error if any in[i] has the eighth bit set, or 0
+ *	on success.
+ */
+static int
+bech32_tolower(char *out, const char *in, size_t n)
+{
+	int error = 0;
+
+	for (; 8 <= n; out += 8, in += 8, n -= 8)
+		error |= bech32_tolower_8(out, in);
+	if (n) {
+		char buf[8];
+
+		memcpy(buf, in, n);
+		memset(buf + n, 0, 8 - n);
+		error |= bech32_tolower_8(buf, buf);
+		memcpy(out, buf, n);
+	}
+
+	return error;
+}
+
+/*
+ * bech32_toupper_8(out, in)
+ *
+ *	Convert eight 7-bit US-ASCII code points in[0], in[1], ...,
+ *	in[7] to uppercase at out[0], out[1], ..., out[7] in constant
+ *	time.  Returns -1 on error if any in[i] has the eighth bit set,
+ *	or 0 on success.
+ */
+static int
+bech32_toupper_8(char out[static 8], const char in[static 8])
+{
+	uint64_t x, y, error, mask;
+
+	/*
+	 * Load input.  byte order doesn't matter as long as it matches
+	 * on input and output -- each byte is independent.
+	 */
+	memcpy(&x, in, 8);
+
+	/*
+	 * Input should be US-ASCII; take eighth bit as error
+	 * indicator, and then set it to borrow from while we work on
+	 * 7-bit units.
+	 */
+	error = x & UINT64_C(0x8080808080808080);
+	y = x;
+	x |= UINT64_C(0x8080808080808080);
+
+	/*
+	 * Borrow if less than `a' (0x61): clear eighth bit in each
+	 * unit less than `a'.
+	 */
+	CTASSERT('a' == 0x61);
+	mask = x - UINT64_C(0x6161616161616161);
+
+	/*
+	 * Borrow if not greater than `z' (0x7a) and invert: clear
+	 * eighth bit in each unit greater than `z'.
+	 */
+	CTASSERT('z' == 0x7a);
+	mask &= ~(x - UINT64_C(0x7b7b7b7b7b7b7b7b));
+
+	/*
+	 * Clear all bits other than the borrow.  After this point, the
+	 * eighth bit of each 8-bit unit is set iff that unit lies in
+	 * US-ASCII a-z.
+	 */
+	mask &= 0x8080808080808080;
+
+	/* Shift 0x80 to 0x20 to get the case-changing bit mask.  */
+	mask >>= 2;
+	assert(mask == (mask & 0x2020202020202020));
+
+	/* Change case.  */
+	y ^= mask;
+
+	/* Store output.  */
+	memcpy(out, &y, 8);
+
+	/*
+	 * Map zero to 0, nonzero to -1.  In this case, all the nonzero
+	 * bits will be at positions 7 mod 8, so shift them to 0 mod 8
+	 * and then combine them all at 0.
+	 */
+	error >>= 7;
+	error |= error >> 8;
+	error |= error >> 16;
+	error |= error >> 32;
+	return -(error & 1);
+}
+
+/*
+ * bech32_toupper(out, in, n)
+ *
+ *	Convert n 7-bit US-ASCII code points in[0], in[1], ..., in[n-1]
+ *	to uppercase at out[0], out[1], ..., out[n-1] in constant time.
+ *	Returns -1 on error if any in[i] has the eighth bit set, or 0
+ *	on success.
+ */
+static int
+bech32_toupper(char *out, const char *in, size_t n)
+{
+	int error = 0;
+
+	for (; 8 <= n; out += 8, in += 8, n -= 8)
+		error |= bech32_toupper_8(out, in);
+	if (n) {
+		char buf[8];
+
+		memcpy(buf, in, n);
+		memset(buf + n, 0, 8 - n);
+		error |= bech32_toupper_8(buf, buf);
+		memcpy(out, buf, n);
+	}
+
+	return error;
+}
+
+/*
  * Conservatively avoid overflow.  We can actually handle substantially
  * larger inputs since the expansion is only a factor of 8/5, but this
  * saves the trouble of avoiding size_t overflow in the intermediate
@@ -653,15 +849,51 @@ bech32enc(char *bech32, size_t nbech32, const void *hrp, size_t nhrp,
 }
 
 /*
+ * bech32enc_upper(bech32, nbech32, hrp, nhrp, payload, npayload)
+ *
+ *	Encode the given nhrp-byte HRP and npayload-byte payload in the
+ *	nbech32-byte buffer at bech32, and NUL-terminate the buffer.
+ *	Return -1 on failure (if any of the sizes involved are
+ *	invalid), or the number of bytes in the bech32 encoding,
+ *	excluding the NUL terminator, on success.
+ *
+ *	Note: This encodes uppercase bech32.  Caller is responsible for
+ *	specifying a _lowercase_ HRP, not an uppercase HRP.
+ *
+ *	bech32enc runs in time independent of the values of hrp[0],
+ *	hrp[1], ..., hrp[n - 1] and payload[0], payload[1], ...,
+ *	payload[npayload - 1].  However, the timing does depend on the
+ *	values of nhrp and npayload.
+ */
+int
+bech32enc_upper(char *bech32, size_t nbech32, const void *hrp, size_t nhrp,
+    const void *payload, size_t npayload)
+{
+	int n;
+	int error;
+
+	n = bech32enc(bech32, nbech32, hrp, nhrp, payload, npayload);
+	if (n == -1)
+		return -1;
+	assert(n >= 0);
+	assert(bech32[n] == '\0');
+	error = bech32_toupper(bech32, bech32, (size_t)n);
+	(void)error;
+	assert(error == 0);
+
+	return n;
+}
+
+/*
  * bech32dec(payload, npayload, hrp, nhrp, bech32, nbech32)
  *
  *	Verify and decode the nbech32-byte string at bech32.  Return -1
- *	on failure (mismatched HRP, wrong character set, bad checksum),
- *	or the number of bytes encoded by the bech32 string on success.
+ *	on failure (mismatched HRP, not all uppercase or all lowercase,
+ *	wrong character set, bad checksum), or the number of bytes
+ *	encoded by the bech32 string on success.
  *
- *	Note: This accepts only lowercase bech32.  It does not accept
- *	uppercase bech32.  Caller is responsible for specifying a valid
- *	lowercase HRP.
+ *	Note: Caller is responsible for specifying a valid lowercase
+ *	HRP.
  *
  *	bech32dec runs in time independent of the values of hrp[0],
  *	hrp[1], ..., hrp[n - 1] and bech32[0], bech32[1], ...,
@@ -672,9 +904,10 @@ int
 bech32dec(void *payload, size_t npayload, const void *hrp, size_t nhrp,
     const char *bech32, size_t nbech32)
 {
+	char buf[BECH32_MAX + 1];
 	uint8_t datacksum[BECH32_DATA_MAX + BECH32_CKSUMLEN];
 	size_t i, ndata;
-	int error = 0;
+	int notupper, notlower, error = 0;
 
 	if (nhrp == 0)		/* hrp must be nonempty */
 		return -1;
@@ -684,10 +917,30 @@ bech32dec(void *payload, size_t npayload, const void *hrp, size_t nhrp,
 	if (nbech32 - BECH32_CKSUMLEN - 1 < nhrp)
 		return -1;
 
+	/* Convert to uppercase and see whether it matches.  */
+	error |= bech32_toupper(buf, bech32, nbech32);
+	for (notupper = 0, i = 0; i < nbech32; i++)
+		notupper |= bech32[i] ^ buf[i];
+
+	/*
+	 * Convert to lowercase and see whether it matches.  Leave the
+	 * buffer as lowercase for subsequent processing.
+	 */
+	error |= bech32_tolower(buf, bech32, nbech32);
+	for (notlower = 0, i = 0; i < nbech32; i++)
+		notlower |= bech32[i] ^ buf[i];
+
+	/* Map zero to 0, nonzero to -1.  */
+	notupper = ~((notupper - 1) >> 8);
+	notlower = ~((notlower - 1) >> 8);
+
+	/* Error if notlower and notupper.  */
+	error |= notupper & notlower;
+
 	/* Verify that bech32 starts with hrp followed by `1'.  */
 	for (i = 0; i < nhrp; i++)
-		error |= bech32[i] ^ ((const char *)hrp)[i];
-	error |= bech32[nhrp] ^ '1';
+		error |= buf[i] ^ ((const char *)hrp)[i];
+	error |= buf[nhrp] ^ '1';
 
 	/* Determine the length of the encoded data part.  */
 	ndata = nbech32 - nhrp - 1 - BECH32_CKSUMLEN;
@@ -695,7 +948,7 @@ bech32dec(void *payload, size_t npayload, const void *hrp, size_t nhrp,
 		return -1;
 
 	/* Decode 5-bit groups.  */
-	error |= bech32_c2b(datacksum, bech32 + nhrp + 1,
+	error |= bech32_c2b(datacksum, buf + nhrp + 1,
 	    ndata + BECH32_CKSUMLEN);
 
 	/* Verify the checksum.  */

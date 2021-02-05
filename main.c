@@ -35,14 +35,11 @@
  * - Consider supporting PINs for FIDO2 devices.
  *
  * - Read from all devices on system in parallel.
- *
- * - Handle uppercase bech32 properly.
  */
 
 #define	_POSIX_C_SOURCE	200809L
 
 #include <assert.h>
-#include <ctype.h>		/* XXX variable-time tolower, toupper */
 #include <err.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -493,12 +490,10 @@ do_keygen(void)
 	printf("%s\n", bech32);
 
 	/* Print the identity.  */
-	if ((n = bech32enc(bech32, sizeof(bech32),
+	if ((n = bech32enc_upper(bech32, sizeof(bech32),
 		    AGEFIDO_ID_HRP, strlen(AGEFIDO_ID_HRP),
 		    credential_id, ncredential_id)) == -1)
 		errx(1, "bech32enc");
-	while (n --> 0)		/* XXX variable-time */
-		bech32[n] = toupper((unsigned char)bech32[n]);
 	printf("%s\n", bech32);
 
 	OPENSSL_cleanse(bech32, sizeof(bech32));
@@ -620,13 +615,23 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 
 		R = &recips[i];
 
-		/* Decode and verify the credential id.  */
+		/*
+		 * Find the length of the credential id and allocate a
+		 * buffer for it.
+		 */
 		if ((n = bech32dec_size(strlen(AGEFIDO_HRP),
 			    strlen(R->bech32))) == -1)
 			errx(1, "invalid recipient");
 		assert(n >= 0);
 		if ((R->credential_id = malloc(n ? n : 1)) == NULL)
 			err(1, "malloc");
+
+		/*
+		 * Decode and verify the credential id.  This silently
+		 * accepts both uppercase and lowercase bech32; it is
+		 * the age client's responsibility to verify the
+		 * recipient is lowercase.
+		 */
 		if (bech32dec(R->credential_id, (size_t)n,
 			AGEFIDO_HRP, strlen(AGEFIDO_HRP),
 			R->bech32, strlen(R->bech32)) != n)
@@ -841,12 +846,12 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 			err(1, "malloc");
 		I->ncredential_id = (size_t)n;
 
-		/* Convert the credential id to lowercase.  */
-		/* XXX variable-time and doesn't validate */
-		for (j = 0; j < strlen(I->bech32); j++) /* XXX */
-			I->bech32[j] = tolower((unsigned char)I->bech32[j]);
-
-		/* Decode the credential id.  */
+		/*
+		 * Decode the credential id.  This silently accepts
+		 * both uppercase and lowercase bech32; it is the age
+		 * client's responsibility to verify the identity is
+		 * uppercase.
+		 */
 		if (bech32dec(I->credential_id, I->ncredential_id,
 			AGEFIDO_ID_HRP, strlen(AGEFIDO_ID_HRP),
 			I->bech32, strlen(I->bech32)) == -1)

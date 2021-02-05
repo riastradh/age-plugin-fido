@@ -20,22 +20,22 @@ Generate an identity:
 ```none
    $ ./age-plugin-fido
 # tap fido2 device
-<  age1fido1ptwc54q9d6juf5v7utjegu89pfystqjdvzka9njuvsdxam0g7836fl25lemuw39zn7vl2j0vtx4zprg3c4rkqkusk82p0s4yz3u2kkq83xgqv
-<  AGE-PLUGIN-FIDO-1PTWC54Q9D6JUF5V7UTJEGU89PFYSTQJDVZKA9NJUVSDXAM0G7836FL25LEMUW39ZN7VL2J0VTX4ZPRG3C4RKQKUSK82P0S4YZ3U2KKQQHYU94
+<  age1fido1yvzqylncrhhrnw8sz64shsg34jdeeths2h70kfw7hqqgznf26ke55y972xws6v74cdy2twsjss77g2xzwfkweejasgfkny6qe2fm64q0aqv5p
+<  AGE-PLUGIN-FIDO-1YVZQYLNCRHHRNW8SZ64SHSG34JDEETHS2H70KFW7HQQGZNF26KE55Y972XWS6V74CDY2TWSJSS77G2XZWFKWEEJASGFKNY6QE2FM64QGMZC3C
 ```
 
 Encapsulate a key:
 
 ```none
    $ ./age-plugin-fido --age-plugin=recipient-v1
->  -> add-recipient age1fido1ptwc54q9d6juf5v7utjegu89pfystqjdvzka9njuvsdxam0g7836fl25lemuw39zn7vl2j0vtx4zprg3c4rkqkusk82p0s4yz3u2kkq83xgqv
+>  -> add-recipient age1fido1yvzqylncrhhrnw8sz64shsg34jdeeths2h70kfw7hqqgznf26ke55y972xws6v74cdy2twsjss77g2xzwfkweejasgfkny6qe2fm64q0aqv5p
 >  -> wrap-file-key
 >  4bgH0XAZjfFoWzu9kPEc1X3LLDtrJhqsVzKbrdpfFtw=
 >  -> done
 # tap fido2 device
-<  -> recipient-stanza 0 fido TSIPatlIgzGOndSxgU9ZIP8ht1wMhrmtvK40LKqe9Ns= 2ej1C6wjwzM+1xjznkIxlhI6SSudWZnJQ+DB29yEFh0=
-<  XbY6wJxvFVJZllDFFDtxDXUqwZfBdr3sIZyMYWC1KlYIK0NB4/MSKwu9HJDcvYyC
-<  GmU9ISKeaF4C8+pkFJHzMw==
+<  -> recipient-stanza 0 fido 7bupApLfkhzCgdmpgM6PcC1uDEIm3QZeSVjg2rgE3Ck= wx3Sr82kfmOQttx7ND7ic2uCpmxrA5Es6s+GUb9uAfM=
+<  DiI1KqY+rLlliM0dUBPWwjJtBNWC2k9V3hFheWZ2izI2wPP/q1mvftAhsixI6zPY
+<  dPjOM5s812VOgccOjJl51g==
 <  -> done
 ```
 
@@ -43,10 +43,10 @@ Decapsulate the key:
 
 ```none
    $ ./age-plugin-fido --age-plugin=identity-v1
->  -> add-identity AGE-PLUGIN-FIDO-1PTWC54Q9D6JUF5V7UTJEGU89PFYSTQJDVZKA9NJUVSDXAM0G7836FL25LEMUW39ZN7VL2J0VTX4ZPRG3C4RKQKUSK82P0S4YZ3U2KKQQHYU94
->  -> recipient-stanza 0 fido TSIPatlIgzGOndSxgU9ZIP8ht1wMhrmtvK40LKqe9Ns= 2ej1C6wjwzM+1xjznkIxlhI6SSudWZnJQ+DB29yEFh0=
->  XbY6wJxvFVJZllDFFDtxDXUqwZfBdr3sIZyMYWC1KlYIK0NB4/MSKwu9HJDcvYyC
->  GmU9ISKeaF4C8+pkFJHzMw==
+>  -> add-identity AGE-PLUGIN-FIDO-1YVZQYLNCRHHRNW8SZ64SHSG34JDEETHS2H70KFW7HQQGZNF26KE55Y972XWS6V74CDY2TWSJSS77G2XZWFKWEEJASGFKNY6QE2FM64QGMZC3C
+>  -> recipient-stanza 0 fido 7bupApLfkhzCgdmpgM6PcC1uDEIm3QZeSVjg2rgE3Ck= wx3Sr82kfmOQttx7ND7ic2uCpmxrA5Es6s+GUb9uAfM=
+>  DiI1KqY+rLlliM0dUBPWwjJtBNWC2k9V3hFheWZ2izI2wPP/q1mvftAhsixI6zPY
+>  dPjOM5s812VOgccOjJl51g==
 >  -> done
 # tap fido2 device
 <  -> file-key 0

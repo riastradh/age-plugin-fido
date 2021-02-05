@@ -1,15 +1,27 @@
 valid 0 decode ok (0 bytes)
+valid 0 decode ok (0 bytes)
 valid 0 encode ok (8 bytes) a12uel5l
+valid 0 encode ok (8 bytes) A12UEL5L
+valid 1 decode ok (0 bytes)
 valid 1 decode ok (0 bytes)
 valid 1 encode ok (90 bytes) an83characterlonghumanreadablepartthatcontainsthenumber1andtheexcludedcharactersbio1tt5tgs
+valid 1 encode ok (90 bytes) AN83CHARACTERLONGHUMANREADABLEPARTTHATCONTAINSTHENUMBER1ANDTHEEXCLUDEDCHARACTERSBIO1TT5TGS
+valid 2 decode ok (0 bytes)
 valid 2 decode ok (0 bytes)
 valid 2 encode ok (91 bytes) an84characterslonghumanreadablepartthatcontainsthenumber1andtheexcludedcharactersbio1569pvx
+valid 2 encode ok (91 bytes) AN84CHARACTERSLONGHUMANREADABLEPARTTHATCONTAINSTHENUMBER1ANDTHEEXCLUDEDCHARACTERSBIO1569PVX
+valid 3 decode ok (51 bytes) 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 valid 3 decode ok (51 bytes) 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 valid 3 encode ok (90 bytes) 11qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqc8247j
+valid 3 encode ok (90 bytes) 11QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQC8247J
+valid 4 decode ok (30 bytes) c5 f3 8b 70 30 5f 51 9b f6 6d 85 fb 6c f0 30 58 f3 dd e4 63 ec d7 91 8f 2d c7 43 91 8f 2d
 valid 4 decode ok (30 bytes) c5 f3 8b 70 30 5f 51 9b f6 6d 85 fb 6c f0 30 58 f3 dd e4 63 ec d7 91 8f 2d c7 43 91 8f 2d
 valid 4 encode ok (60 bytes) split1checkupstagehandshakeupstreamerranterredcaperred2y9e3w
+valid 4 encode ok (60 bytes) SPLIT1CHECKUPSTAGEHANDSHAKEUPSTREAMERRANTERREDCAPERRED2Y9E3W
+valid 5 decode ok (0 bytes)
 valid 5 decode ok (0 bytes)
 valid 5 encode ok (8 bytes) ?1ezyfcl
+valid 5 encode ok (8 bytes) ?1EZYFCL
 invalid 0 decoded -1
 invalid 3 decoded -1
 invalid 4 decoded -1

@@ -39,4 +39,7 @@ int bech32dec_size(size_t, size_t);
 int bech32enc(char *, size_t, const void *, size_t, const void *, size_t);
 int bech32dec(void *, size_t, const void *, size_t, const char *, size_t);
 
+int bech32enc_upper(char *, size_t, const void *, size_t,
+    const void *, size_t);
+
 #endif	/* BECH32_H */

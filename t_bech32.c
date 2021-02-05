@@ -24,6 +24,7 @@
  * SUCH DAMAGE.
  */
 
+#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -88,7 +89,7 @@ static const struct {
 	[5] = { .hrp = "x", .bech32 = "x1b4n0q5v" },
 	[6] = { .hrp = "li", .bech32 = "li1dgmt3" },
 	[7] = { .hrp = "de", .bech32 = "de1lg7wt\377" },
-	[8] = { .hrp = "a", .bech32 = "a1g7sgd8" }, /* XXX uppercase */
+	[8] = { .hrp = "a", .bech32 = "A1G7SGD8" },
 	[9] = { .hrp = "", .bech32 = "10a06t8" },
 	[10] = { .hrp = "", .bech32 = "1qzzfhee" },
 	[11] = {
@@ -125,27 +126,59 @@ main(void)
 	uint8_t payload[BECH32_PAYLOAD_MAX];
 	char bech32[BECH32_MAX + 1];
 	unsigned i;
-	int n, j;
+	int n, m, j;
 
+	/* Valid tests.  */
 	for (i = 0; i < arraycount(V); i++) {
+		/* Decode as is (lowercase).  */
 		if ((n = bech32dec(payload, sizeof(payload),
 			    V[i].hrp, strlen(V[i].hrp),
 			    V[i].bech32, strlen(V[i].bech32))) == -1) {
 			printf("valid %u decode fail\n", i);
-			continue;
+			memset(payload, 0, sizeof(payload));
+		} else {
+			printf("valid %u decode ok (%d bytes)", i, n);
+			for (j = 0; j < n; j++)
+				printf(" %02hhx", payload[j]);
+			printf("\n");
 		}
-		printf("valid %u decode ok (%d bytes)", i, n);
-		for (j = 0; j < n; j++)
-			printf(" %02hhx", payload[j]);
-		printf("\n");
-		if ((n = bech32enc(bech32, sizeof(bech32),
+
+		/* Map to uppercase and decode again.  */
+		for (j = 0; j < (int)strlen(V[i].bech32); j++)
+			bech32[j] = tolower((unsigned char)V[i].bech32[j]);
+		bech32[j] = '\0';
+		if ((n = bech32dec(payload, sizeof(payload),
+			    V[i].hrp, strlen(V[i].hrp),
+			    bech32, strlen(bech32))) == -1) {
+			printf("valid %u decode fail\n", i);
+			memset(payload, 0, sizeof(payload));
+		} else {
+			printf("valid %u decode ok (%d bytes)", i, n);
+			for (j = 0; j < n; j++)
+				printf(" %02hhx", payload[j]);
+			printf("\n");
+		}
+
+		/* Encode as lowercase.  */
+		if ((m = bech32enc(bech32, sizeof(bech32),
 			    V[i].hrp, strlen(V[i].hrp), payload, n)) == -1) {
 			printf("valid %u encode fail\n", i);
-			continue;
+		} else {
+			printf("valid %u encode ok (%d bytes) %s\n", i, m,
+			    bech32);
 		}
-		printf("valid %u encode ok (%d bytes) %s\n", i, n, bech32);
+
+		/* Encode as uppercase.  */
+		if ((m = bech32enc_upper(bech32, sizeof(bech32),
+			    V[i].hrp, strlen(V[i].hrp), payload, n)) == -1) {
+			printf("valid %u encode fail\n", i);
+		} else {
+			printf("valid %u encode ok (%d bytes) %s\n", i, m,
+			    bech32);
+		}
 	}
 
+	/* Invalid tests.  */
 	for (i = 0; i < arraycount(I); i++) {
 		if (I[i].bech32 == NULL)
 			continue;
