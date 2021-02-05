@@ -66,11 +66,9 @@ with `age1fido`.
 Recipient stanza has form:
 
 ```none
--> recipient-stanza <n> fido <base64-credid> <base64-salt>
+fido <base64-credid> <base64-salt>
 <base64-ciphertext>
 ```
-
-- `<n>` is the file number
 
 - `<base64-credid>` is the whitespace-free base64 encoding of the
   credential id
