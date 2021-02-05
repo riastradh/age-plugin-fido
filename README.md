@@ -33,9 +33,9 @@ Encapsulate a key:
 >  4bgH0XAZjfFoWzu9kPEc1X3LLDtrJhqsVzKbrdpfFtw=
 >  -> done
 # tap fido2 device
-<  -> recipient-stanza 0 fido Ct2KVAVupcTRnuLllHDlCkkFgk1grdLOXGQabu3o8eOk/VT+d8dEop+Z9UnsWaogjRHFR2BbkLHUF8KkFHirWA== YRUSIfXZqmpMrRzT7RdtEYXPt/I5jTlkMw8G1hxoozc=
-<  tjxsLuBrDuQnwWFfzDtsrP0kyVt7vriEq295oDSwsSdQ20KoDZWf0z5BVnouasur
-<  rcJ335mFwKtr7fC6sbUmvQ==
+<  -> recipient-stanza 0 fido TSIPatlIgzGOndSxgU9ZIP8ht1wMhrmtvK40LKqe9Ns= 2ej1C6wjwzM+1xjznkIxlhI6SSudWZnJQ+DB29yEFh0=
+<  XbY6wJxvFVJZllDFFDtxDXUqwZfBdr3sIZyMYWC1KlYIK0NB4/MSKwu9HJDcvYyC
+<  GmU9ISKeaF4C8+pkFJHzMw==
 <  -> done
 ```
 
@@ -44,9 +44,9 @@ Decapsulate the key:
 ```none
    $ ./age-plugin-fido --age-plugin=identity-v1
 >  -> add-identity AGE-PLUGIN-FIDO-1PTWC54Q9D6JUF5V7UTJEGU89PFYSTQJDVZKA9NJUVSDXAM0G7836FL25LEMUW39ZN7VL2J0VTX4ZPRG3C4RKQKUSK82P0S4YZ3U2KKQQHYU94
->  -> recipient-stanza 0 fido Ct2KVAVupcTRnuLllHDlCkkFgk1grdLOXGQabu3o8eOk/VT+d8dEop+Z9UnsWaogjRHFR2BbkLHUF8KkFHirWA== YRUSIfXZqmpMrRzT7RdtEYXPt/I5jTlkMw8G1hxoozc=
->  tjxsLuBrDuQnwWFfzDtsrP0kyVt7vriEq295oDSwsSdQ20KoDZWf0z5BVnouasur
->  rcJ335mFwKtr7fC6sbUmvQ==
+>  -> recipient-stanza 0 fido TSIPatlIgzGOndSxgU9ZIP8ht1wMhrmtvK40LKqe9Ns= 2ej1C6wjwzM+1xjznkIxlhI6SSudWZnJQ+DB29yEFh0=
+>  XbY6wJxvFVJZllDFFDtxDXUqwZfBdr3sIZyMYWC1KlYIK0NB4/MSKwu9HJDcvYyC
+>  GmU9ISKeaF4C8+pkFJHzMw==
 >  -> done
 # tap fido2 device
 <  -> file-key 0

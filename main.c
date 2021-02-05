@@ -69,9 +69,11 @@
 
 #define	arraycount(A)	(sizeof(A)/sizeof(*(A)))
 
-#define	AGEFIDO_RP_ID	"x-age://fido"
-#define	AGEFIDO_HRP	"age1fido"
-#define	AGEFIDO_ID_HRP	"age-plugin-fido-"
+#define	AGEFIDO_RP_ID		"x-age://fido"
+#define	AGEFIDO_HRP		"age1fido"
+#define	AGEFIDO_ID_HRP		"age-plugin-fido-"
+#define	AGEFIDO_HASHTAG		"AGEFIDO1"
+#define	AGEFIDO_HASHTAGLEN	8
 
 static fido_dev_t *
 opendev(const char *devpath)
@@ -360,6 +362,25 @@ decap(const void *credential_id, size_t ncredential_id,
 	return payload;
 }
 
+static void
+hashcred(uint8_t hash[static SHA256_DIGEST_LENGTH],
+    const void *credential_id, size_t ncredential_id)
+{
+	SHA256_CTX ctx;
+	unsigned char len16be[2];
+
+	assert(ncredential_id <= 0xffff);
+
+	len16be[0] = (ncredential_id >> 8) & 0xff;
+	len16be[0] = ncredential_id & 0xff;
+
+	SHA256_Init(&ctx);
+	SHA256_Update(&ctx, AGEFIDO_HASHTAG, AGEFIDO_HASHTAGLEN);
+	SHA256_Update(&ctx, len16be, sizeof(len16be));
+	SHA256_Update(&ctx, credential_id, ncredential_id);
+	SHA256_Final(hash, &ctx);
+}
+
 static bool
 eat(char **bufp, size_t *lenp, const char *prefix)
 {
@@ -492,6 +513,7 @@ do_recipient(void)
 		char *bech32;
 		unsigned char *credential_id;
 		size_t ncredential_id;
+		uint8_t *sha256;
 	} recips[32], *R;
 	unsigned nrecips = 0;
 	struct {
@@ -592,21 +614,29 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 		}
 	}
 
-	/* Verify that all the recipients are valid and decode.  */
+	/* Validate and decode all the recipients.  */
 	for (i = 0; i < nrecips; i++) {
 		int n;
 
+		R = &recips[i];
+
+		/* Decode and verify the credential id.  */
 		if ((n = bech32dec_size(strlen(AGEFIDO_HRP),
-			strlen(recips[i].bech32))) == -1)
+			    strlen(R->bech32))) == -1)
 			errx(1, "invalid recipient");
 		assert(n >= 0);
-		if ((recips[i].credential_id = malloc(n ? n : 1)) == NULL)
+		if ((R->credential_id = malloc(n ? n : 1)) == NULL)
 			err(1, "malloc");
-		if (bech32dec(recips[i].credential_id, (size_t)n,
+		if (bech32dec(R->credential_id, (size_t)n,
 			AGEFIDO_HRP, strlen(AGEFIDO_HRP),
-			recips[i].bech32, strlen(recips[i].bech32)) != n)
+			R->bech32, strlen(R->bech32)) != n)
 			errx(1, "invalid recipient");
-		recips[i].ncredential_id = (size_t)n;
+		R->ncredential_id = (size_t)n;
+
+		/* Hash the credential id.  */
+		if ((R->sha256 = malloc(SHA256_DIGEST_LENGTH)) == NULL)
+			err(1, "malloc");
+		hashcred(R->sha256, R->credential_id, R->ncredential_id);
 	}
 
 	/* Encapsulate all the keys.  */
@@ -640,7 +670,7 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 			KW = &keywraps[nrecips*i + j];
 
 			printf("-> recipient-stanza %d fido ", j);
-			b64write(R->credential_id, R->ncredential_id, stdout,
+			b64write(R->sha256, SHA256_DIGEST_LENGTH, stdout,
 			    BIO_FLAGS_BASE64_NO_NL);
 			printf(" ");
 			b64write(KW->salt, sizeof(KW->salt), stdout,
@@ -659,11 +689,12 @@ do_identity(void)
 		char *bech32;
 		unsigned char *credential_id;
 		size_t ncredential_id;
+		unsigned char *sha256;
 	} ids[32], *I;
 	unsigned nids = 0;
 	struct {
 		int file_index;
-		char *credid_b64;
+		char *credhash_b64;
 		char *salt_b64;
 		unsigned char *buf;
 		unsigned len;
@@ -736,7 +767,7 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 				/* XXX print, not err */
 				errx(1, "invalid recipient");
 			*q++ = '\0';
-			if ((S->credid_b64 = strdup(p)) == NULL ||
+			if ((S->credhash_b64 = strdup(p)) == NULL ||
 			    (S->salt_b64 = strdup(q)) == NULL)
 				err(1, "strdup");
 
@@ -820,14 +851,19 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 			AGEFIDO_ID_HRP, strlen(AGEFIDO_ID_HRP),
 			I->bech32, strlen(I->bech32)) == -1)
 			errx(1, "invalid identity");
+
+		/* Hash the credential id.  */
+		if ((I->sha256 = malloc(SHA256_DIGEST_LENGTH)) == NULL)
+			err(1, "malloc");
+		hashcred(I->sha256, I->credential_id, I->ncredential_id);
 	}
 
 	/*
 	 * Phase 2 [plugin, bi-directional]
 	 */
 	for (file_index = -1, i = 0; i < nstanzas; i++) {
-		void *credential_id = NULL;
-		size_t ncredential_id = 0;
+		void *credhash = NULL;
+		size_t ncredhash = 0;
 		void *salt = NULL;
 		size_t nsalt = 0;
 		void *key = NULL;
@@ -840,16 +876,16 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 			continue;
 
 		/* Decode the base64 recipient credential id.  */
-		if (b64dec(S->credid_b64, strlen(S->credid_b64),
-			&credential_id, &ncredential_id) == -1)
+		if (b64dec(S->credhash_b64, strlen(S->credhash_b64),
+			&credhash, &ncredhash) == -1 ||
+		    ncredhash != SHA256_DIGEST_LENGTH)
 			errx(1, "invalid recipient stanza");
 
 		/* Find the matching identity.  */
 		for (j = 0; j < nids; j++) {
 			I = &ids[j];
-			if (ncredential_id == I->ncredential_id &&
-			    CRYPTO_memcmp(credential_id, I->credential_id,
-				ncredential_id) == 0)
+			if (CRYPTO_memcmp(credhash, I->sha256,
+				SHA256_DIGEST_LENGTH) == 0)
 				break;
 		}
 		if (j == nids)
@@ -861,7 +897,7 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 			errx(1, "invalid salt");
 
 		/* Decapsulate the key.  */
-		key = decap(credential_id, ncredential_id, salt, nsalt,
+		key = decap(I->credential_id, I->ncredential_id, salt, nsalt,
 		    S->buf, S->len, &nkey);
 
 		printf("-> file-key %d\n", S->file_index);
@@ -870,7 +906,7 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 
 		free(key);
 		free(salt);
-		free(credential_id);
+		free(credhash);
 	}
 	printf("-> done\n");
 }
