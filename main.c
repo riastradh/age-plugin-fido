@@ -698,7 +698,7 @@ parsecmd:	/* Parse the n-byte line in buf, including trailing LF.  */
 			 * separated by a space.
 			 */
 			if (n-- == 0 || *p++ != ' ')
-				errx(1, "bad add-recipient command");
+				errx(1, "bad add-identity command");
 
 			/* Verify we haven't filled the identity list.  */
 			if (nids >= arraycount(ids))
