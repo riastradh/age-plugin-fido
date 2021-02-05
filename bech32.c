@@ -302,7 +302,7 @@ bech32_b2c_8(char out[restrict static 8], const uint8_t in[static 8])
  * bech32_b2c(out, in, n)
  *
  *	Convert 5-bit groups from binary integer values in[0], in[1],
- *	..., in[n-1]] to characters out[0], out[1], ..., out[n-1] in
+ *	..., in[n-1] to characters out[0], out[1], ..., out[n-1] in
  *	the bech32 set, in constant time.
  */
 static void
